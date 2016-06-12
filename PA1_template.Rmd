@@ -1,0 +1,153 @@
+---
+title: "Reproducible Research Course Project 1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading and Preprocessing the data
+
+Load data from the local directory into the object "activity", and show the summary of its statistics.
+
+```{r data_reading, cache = TRUE}
+activity <- read.csv('./data/activity.csv',stringsAsFactors = FALSE)
+summary(activity)
+```
+
+Transform the variable, date, into POSIXct format using lubridate package.
+
+```{r date_transformation, message=FALSE}
+library(lubridate)
+activity$date <- ymd(activity$date)
+str(activity)
+```
+
+## What is the mean total number of steps?
+
+The total number of steps taken every day is listed as follows,
+
+```{r results='hide'}
+require(dplyr)
+```
+
+```{r}
+avg_steps <- group_by(activity,date) %>% summarize(totalSteps = sum(steps,na.rm=TRUE), na =
+                                                       sum(is.na(steps)))
+avg_steps
+```
+
+We visualize the total number of steps taken each day using a histogram,
+
+```{r histogram}
+hist(avg_steps$totalSteps, breaks =20, col='red', main = 'Total number of steps taken per day',xlab = 'Total number of steps taken per day')
+```
+
+Furthermore, we are able to derive the mean and median of total steps taken per day.
+
+```{r}
+mean_steps <- mean(avg_steps$totalSteps, na.rm = TRUE)
+median_steps <- median(avg_steps$totalSteps, na.rm =TRUE)
+```
+
+The mean and median of total steps per day are `r round(mean_steps)` and `r median_steps` respectively.
+
+## What is the average daily activity pattern?
+
+In this section, we look at the daily activity pattern using 5-minute interval averaged across all days. First, we group the dataset by 5-minute interval, and present the average steps in a table,
+
+```{r dailyPattern}
+daily_pattern <- group_by(activity, interval) %>% summarise(avg_interval = mean(steps,na.rm= TRUE))
+daily_pattern
+
+```
+
+As a result, we are able to visualize the table through a time series plot,
+
+```{r}
+plot(daily_pattern$interval, daily_pattern$avg_interval, type='l',col='blue', xlab = '5-minute interval', ylab = 'Average 5-minute steps across all days', main = 'Average daily activity pattern')
+
+```
+
+Next, we see which maximum 5-minute interval contains the maximum number of steps averaged across all days, and the corresponding figure.
+
+```{r}
+max_interval <- filter(daily_pattern, avg_interval == max(avg_interval))
+max_interval
+```
+
+In summary, interval "`r max_interval[1]`" contains the maximum number of steps (`r round(max_interval[2])`).
+
+## Inputting missing values
+
+In this section, we will attempt to deal with missing values. First, we look at how many missing values of steps there are in the original dataset.
+
+```{r}
+num_na <- summarize(avg_steps,sum(na))
+```
+
+There are `r num_na[1,1]` missing values (i.e., total number of rows with NAs) in total in the dataset.
+
+Next, we devise a strategy to fill in these missing values. As there are a large amount of missing values, which concentrate on eight specific days, we choose to utilize the average number of 5-minute steps. In doing so, the resulting dataset would be more informative of the daily activity pattern shown in the last section. We take a bridf look at the modified dataset with an extra variable of steps with missing values filled in.
+
+```{r}
+steps_modified <- numeric(nrow(activity))
+for (i in 1:nrow(activity)) {
+    if (is.na(activity[i,'steps'])) {
+        steps_modified[i] <- filter(daily_pattern, interval == activity[i,'interval']) %>% select(avg_interval)
+    }
+    else {
+        steps_modified[i] <- activity[i,'steps']
+    }
+}
+
+steps_modified <- as.numeric(steps_modified)
+activity_modified <- mutate(activity, steps_no_NA = steps_modified)
+head(activity_modified)
+str(activity_modified)
+```
+
+As previously, we draw a histogram of total number of steps taken each day for the modified dataset.
+
+```{r}
+avg_steps_modified <- group_by(activity_modified,date) %>% summarize(totalSteps = sum(steps_no_NA,na.rm=TRUE), na = sum(is.na(steps)))
+hist(avg_steps_modified$totalSteps,breaks=20,col='magenta', main = 'Total number of steps taken each day', xlab = 'Total number of steps taken each day')
+```
+
+Furthermore, we are able to derive the mean and median of total steps taken per day for the modified model.
+
+```{r}
+mean_steps_modified <- mean(avg_steps_modified$totalSteps, na.rm = TRUE)
+median_steps_modified <- median(avg_steps_modified$totalSteps, na.rm =TRUE)
+```
+
+The mean and median of total steps per day for the modified model are `r as.integer(mean_steps_modified)` and `r as.integer(median_steps_modified)` respectively. Compared to the outcome obtained when ignoring missing values, both figures are a bit larger, which makes the analysis more reasonable.
+
+## Are there differences in activity patterns between weekdays and weekends?
+
+In the following, we add a factor variable to the modified dataset in order to determine whether a day is a weekday or weekend.
+
+```{r}
+is_weekdays <- rep(0,nrow(activity_modified))
+for (i in 1:nrow(activity_modified)) {
+    if (weekdays.Date(activity_modified[i,'date'],abbreviate = TRUE) %in% c('Mon','Tue','Wed','Thu','Fri')) {
+        is_weekdays[i] <- 'weekday' 
+    }
+    else {
+        is_weekdays[i] <- 'weekend'
+    }
+}
+is_weekdays <- as.factor(is_weekdays)
+table(is_weekdays)
+activity_modified <- mutate(activity_modified, week = is_weekdays)
+str(activity_modified)
+```
+
+Last, we observe the daily activity pattern for weekdays and weekends respectively, in time series plots. 
+
+```{r}
+daily_pattern_week <- group_by(activity_modified,week,interval) %>% summarize(avg_interval=mean(steps_no_NA))
+library(ggplot2)
+qplot(interval,avg_interval,data = daily_pattern_week,geom = 'line',facets = week ~ ., main = 'Daily activity pattern for weekdays and weekends', xlab = '5-minute interval')
+```
